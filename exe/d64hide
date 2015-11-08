@@ -1,0 +1,83 @@
+#!/usr/bin/env ruby
+
+require 'd64tools'
+
+source_file = ARGV[0]
+dirart_file = ARGV[1]
+target_file = ARGV[2]
+
+source_file && dirart_file && target_file or
+  fail "Usage: #{$0} <d64-source> <d64-dirart> <d64-target>"
+
+source_image = D64::Image.read(source_file)
+source_image.name = 'source'
+
+dirart_image = D64::Image.read(dirart_file)
+dirart_image.name = 'dirart'
+
+source_dir = source_image.directory_chain
+dirart_dir = dirart_image.directory_chain
+
+art_size = dirart_dir.size
+src_free = source_image.bam.free_blocks
+
+src_free >= art_size or
+  fail "Only #{src_free} of #{art_size} blocks free for dirart!"
+
+puts "Dir art needs #{art_size} out of #{src_free} free blocks."  if ENV['DEBUG']
+
+prv_sector = nil
+dir_sector = nil
+
+boot_ptr = source_image.sector([18, 1]).bytes[3, 2]
+puts "Boot file at [%02d:%02d]" % boot_ptr if ENV['DEBUG']
+
+target_sectors = [
+  [35,  0], [35,  1], [35,  4], [35,  7], [35, 10],
+  [35, 13], [35, 16], [35,  2], [35,  5], [35,  8],
+  [35, 11], [35, 14], [35,  3], [35,  6], [35,  9],
+  [35, 12], [35, 15]
+]
+
+[dirart_dir.size, source_dir.size].max.times do |i|
+  src_sector = source_dir[i]
+  art_sector = dirart_dir[i]
+
+  if src_sector
+    # Move source sector to track 35 and replace with dirart sector
+    wanted = target_sectors[i]
+    new_sector = source_image.allocate_sector(block: D64::Block.new(*wanted))
+    new_sector.copy_content_from(src_sector)
+
+    if art_sector
+      src_sector.copy_content_from(art_sector, include_link: i == art_size - 1)
+    end
+  else
+    # Just copy the dirart sector since we ran out of files on source
+    new_sector = source_image.allocate_sector(block: art_sector.block)
+    new_sector.copy_content_from(art_sector)
+  end
+
+  if prv_sector
+    prv_sector.link_to new_sector
+  else
+    dir_sector = new_sector
+  end
+  prv_sector = new_sector
+
+  source_image.commit_bam
+end
+
+# if source_dir.size > art_size
+#   prv_sector.link_to(source_dir[art_size])
+# end
+
+# Make first dirart file point to first real file
+sector = source_image.sector([18, 1])
+fnum = (0..7).find { |i| sector.bytes[32 * i + 2] == 0x82 }
+sector.bytes[32 * fnum + 3, 2] = boot_ptr
+sector.commit
+
+source_image.write(target_file)
+
+puts "Finished, hidden directory now at #{dir_sector.pos}." if ENV['DEBUG']

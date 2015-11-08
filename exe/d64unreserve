@@ -1,0 +1,19 @@
+#!/usr/bin/env ruby
+
+# Unreserve all sectors on track 35 to make room for hidden directory
+
+require 'd64tools'
+
+file = ARGV[0]
+
+file or
+  fail "Usage: #{$0} <d64-file>"
+
+image = D64::Image.read(file)
+
+17.times do |sn|
+  image.bam.mark_as_unused 35, sn
+end
+image.bam.commit
+
+image.write file
