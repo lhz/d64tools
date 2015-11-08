@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+
+require 'd64tools'
+require 'json'
+
+spec_file = ARGV[0] or fail "Usage: #{$0} <spec-file>"
+
+D64::Builder.build_all JSON.parse(File.read(spec_file), symbolize_names: true)

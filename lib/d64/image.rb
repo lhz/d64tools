@@ -35,6 +35,18 @@ module D64
       @spt[track]
     end
 
+    def self.interleaved_blocks(track, interleave = 10, sector = 0)
+      count = sectors_per_track(track)
+      visited = Array.new(count) { false }
+      visited[sector] = true
+      (count - 1).times.each_with_object([Block.new(track, sector)]) do |i, blocks|
+        sector = (sector + interleave) % count
+        sector = (sector + 1) % count while visited[sector]
+        blocks << Block.new(track, sector)
+        visited[sector] = true
+      end
+    end
+
     def initialize
       @num_tracks = 35
       @name = ''
@@ -79,6 +91,23 @@ module D64
 
     def commit_bam
       @image[Image.offset(@bam.block) + 4, 140] = @bam.bytes[4, 140]
+    end
+
+    def reserve_blocks(track, first = 0, blocks = 1, interleave = 3)
+      interleaved = D64::Image.interleaved_blocks(track, interleave, first)
+      while blocks > 0
+        block = interleaved.shift or
+          fail "No free blocks to reserve on track #{track}."
+        redo unless bam.free_on_track(track)[block.sector]
+        logger.debug "Marking block #{'[%02d:%02d]' % [block.track, block.sector]} as used."
+        bam.mark_as_used block.track, block.sector
+        blocks -= 1
+      end
+      bam.commit
+    end
+
+    def logger
+      D64.logger
     end
 
     private
