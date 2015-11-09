@@ -7,7 +7,7 @@ module D64
 
   class Image
     attr_reader :num_tracks, :filename
-    attr_accessor :name
+    attr_accessor :name, :interleave
 
     def self.read(filename)
       di = new
@@ -35,21 +35,22 @@ module D64
       @spt[track]
     end
 
-    def self.interleaved_blocks(track, interleave = 10, sector = 0)
+    def self.interleaved_blocks(track, il = interleave, sector = 0)
       count = sectors_per_track(track)
       visited = Array.new(count) { false }
       visited[sector] = true
       (count - 1).times.each_with_object([Block.new(track, sector)]) do |i, blocks|
-        sector = (sector + interleave) % count
+        sector = (sector + il) % count
         sector = (sector + 1) % count while visited[sector]
         blocks << Block.new(track, sector)
         visited[sector] = true
       end
     end
 
-    def initialize
-      @num_tracks = 35
-      @name = ''
+    def initialize(interleave: 10, num_tracks: 35, name: '')
+      @interleave = interleave
+      @num_tracks = num_tracks
+      @name = name
     end
 
     def to_s
@@ -106,10 +107,46 @@ module D64
       bam.commit
     end
 
+    def format(title, disk_id)
+      offset  = 256 * 357
+      title   = title.bytes[0, 16]
+      disk_id = (disk_id + "  ").bytes[0, 2]
+      dos_ver = "A".ord
+      dos_id  = "2A".bytes
+      @image = Array.new(256 * 683) { 0 }
+      @image[offset, 2] = [18, 1]
+      @image[offset + 0x02] = dos_ver
+      @image[offset + 0x90, 27] = [0xA0] * 27
+      @image[offset + 0x90, title.size] = title
+      @image[offset + 0xA2, 2] = disk_id
+      @image[offset + 0xA5, 2] = dos_id
+      @image[offset + 0x100, 2] = [0, 255]
+      @bam = nil
+      (1..35).each do |tn|
+        D64::Image.sectors_per_track(tn).times do |sn|
+          bam.mark_as_unused tn, sn unless tn == 18 && sn < 2
+        end
+      end
+      bam.commit
+    end
+
+    def add_file(name, content)
+      block = @last_file_block
+      while content && content.size > 0
+        block = bam.allocate_with_interleave(block, interleave) or
+          fail "No free blocks, disk full!"
+        # logger.debug "add_file: allocated block #{block}"
+        @image[@last_file_block.offset, 2] = [block.track, block.sector] if @last_file_block
+        @image[block.offset, 256] = [0, 255] + content[0, 254] + [255] * (254 - content[0, 254].size)
+        content = content[254..-1]
+        @last_file_block = block
+      end
+    end
+
     def logger
       D64.logger
     end
-
+    
     private
 
     def sector_data(block)
