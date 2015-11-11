@@ -128,19 +128,43 @@ module D64
         end
       end
       bam.commit
+      @current_dir_block  = Block.new(18, 1)
+      @current_dir_offset = 0
     end
 
-    def add_file(name, content)
+    def add_file(name, content, type = :prg)
+      logger.info "Adding file #{name} of size #{content.size}"
       block = @last_file_block
+      nblocks = 0
       while content && content.size > 0
         block = bam.allocate_with_interleave(block, interleave) or
           fail "No free blocks, disk full!"
+        first_block ||= block
         # logger.debug "add_file: allocated block #{block}"
         @image[@last_file_block.offset, 2] = [block.track, block.sector] if @last_file_block
         @image[block.offset, 256] = [0, 255] + content[0, 254] + [255] * (254 - content[0, 254].size)
         content = content[254..-1]
         @last_file_block = block
+        nblocks += 1
       end
+
+      eo = @current_dir_block.offset + @current_dir_offset
+      @image[eo, 2] = [0, 255] if @current_dir_offset.zero?
+      @image[eo + 2] = 0x80 + [:del, :seq, :prg, :usr, :rel].index(type)
+      @image[eo + 3, 2] = [first_block.track, first_block.sector]
+      @image[eo + 5, 16] = pad_name(name)
+      @image[eo + 30, 2] = [nblocks % 256, nblocks / 256]
+      if @current_dir_offset < 0xE0
+        @current_dir_offset += 0x20
+      else
+        @current_dir_offset = 0
+        block = bam.allocate_with_interleave(@current_dir_block, 3) or
+          fail "No free directory blocks!"
+        @image[@current_dir_block.offset, 2] = [block.track, block.sector]
+        @current_dir_block = block
+      end
+
+      bam.commit
     end
 
     def logger
@@ -148,6 +172,10 @@ module D64
     end
     
     private
+
+    def pad_name(name)
+      name.bytes + [0xA0] * (16 - name.bytes.size)
+    end
 
     def sector_data(block)
       @image[Image.offset(block), 256]
