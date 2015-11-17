@@ -21,13 +21,12 @@ module D64
     end
 
     def store(content)
-      sector = image.last_file_sector
-      block = sector.block if sector
+      sector = nil
+      block = image.last_file_sector.block if image.last_file_sector
       content.each_slice(254) do |bytes|
-        bytes << 255 until bytes.size == 254
         block = image.bam.allocate_with_interleave(block, image.interleave) or
           fail "No free blocks, disk full!"
-        new_sector = Sector.new(image, block, [0, 255] + bytes)
+        new_sector = Sector.new(image, block, [0, 1 + bytes.size] + padded_bytes(bytes))
         new_sector.commit
         if sector
           sector.link_to new_sector
@@ -47,6 +46,12 @@ module D64
 
     def dump
       sectors.each &:dump
+    end
+
+    private
+
+    def padded_bytes(bytes)
+      bytes + [255] * (254 - bytes.size)
     end
   end
 end
