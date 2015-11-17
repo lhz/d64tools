@@ -1,13 +1,15 @@
 require "d64/block"
 require "d64/sector"
 require "d64/block_map"
+require "d64/directory"
+require "d64/entry"
 
 module D64
   # http://vice-emu.sourceforge.net/vice_15.html#SEC278
 
   class Image
-    attr_reader :num_tracks, :filename
-    attr_accessor :name, :interleave
+    attr_reader :num_tracks, :filename, :directory
+    attr_accessor :name, :interleave, :last_file_sector
 
     def self.read(filename)
       di = new
@@ -51,6 +53,12 @@ module D64
       @interleave = interleave
       @num_tracks = num_tracks
       @name = name
+      @directory = Directory.new(self, Block.new(18, 1))
+      zerofill!
+    end
+
+    def zerofill!
+      @image = Array.new(256 * 683) { 0 }
     end
 
     def to_s
@@ -91,7 +99,8 @@ module D64
     end
 
     def commit_bam
-      @image[Image.offset(@bam.block) + 4, 140] = @bam.bytes[4, 140]
+      commit_sector(bam)
+      # @image[Image.offset(@bam.block) + 4, 140] = @bam.bytes[4, 140]
     end
 
     def reserve_blocks(track, first = 0, blocks = 1, interleave = 3)
@@ -100,7 +109,7 @@ module D64
         block = interleaved.shift or
           fail "No free blocks to reserve on track #{track}."
         redo unless bam.free_on_track(track)[block.sector]
-        logger.debug "Marking block #{'[%02d:%02d]' % [block.track, block.sector]} as used."
+        logger.debug "Marking block #{block} as used."
         bam.mark_as_used block.track, block.sector
         blocks -= 1
       end
@@ -108,63 +117,18 @@ module D64
     end
 
     def format(title, disk_id)
-      offset  = 256 * 357
-      title   = title.bytes[0, 16]
-      disk_id = (disk_id + "  ").bytes[0, 2]
-      dos_ver = "A".ord
-      dos_id  = "2A".bytes
-      @image = Array.new(256 * 683) { 0 }
-      @image[offset, 2] = [18, 1]
-      @image[offset + 0x02] = dos_ver
-      @image[offset + 0x90, 27] = [0xA0] * 27
-      @image[offset + 0x90, title.size] = title
-      @image[offset + 0xA2, 2] = disk_id
-      @image[offset + 0xA5, 2] = dos_id
-      @image[offset + 0x100, 2] = [0, 255]
-      @bam = nil
-      (1..35).each do |tn|
-        D64::Image.sectors_per_track(tn).times do |sn|
-          bam.mark_as_unused tn, sn unless tn == 18 && sn < 2
-        end
-      end
-      bam.commit
-      @current_dir_block  = Block.new(18, 1)
-      @current_dir_offset = 0
+      logger.info "Formatting image with title '#{title}' and disk id #{disk_id}"
+      zerofill!
+      bam.format title, disk_id
+      bam.link_to directory.sectors.first
     end
 
     def add_file(name, content, type = :prg)
       logger.info "Adding file #{name} of size #{content.size}"
-      block = @last_file_block
-      nblocks = 0
-      while content && content.size > 0
-        block = bam.allocate_with_interleave(block, interleave) or
-          fail "No free blocks, disk full!"
-        first_block ||= block
-        # logger.debug "add_file: allocated block #{block}"
-        @image[@last_file_block.offset, 2] = [block.track, block.sector] if @last_file_block
-        @image[block.offset, 256] = [0, 255] + content[0, 254] + [255] * (254 - content[0, 254].size)
-        content = content[254..-1]
-        @last_file_block = block
-        nblocks += 1
-      end
-
-      eo = @current_dir_block.offset + @current_dir_offset
-      @image[eo, 2] = [0, 255] if @current_dir_offset.zero?
-      @image[eo + 2] = 0x80 + [:del, :seq, :prg, :usr, :rel].index(type)
-      @image[eo + 3, 2] = [first_block.track, first_block.sector]
-      @image[eo + 5, 16] = pad_name(name)
-      @image[eo + 30, 2] = [nblocks % 256, nblocks / 256]
-      if @current_dir_offset < 0xE0
-        @current_dir_offset += 0x20
-      else
-        @current_dir_offset = 0
-        block = bam.allocate_with_interleave(@current_dir_block, 3) or
-          fail "No free directory blocks!"
-        @image[@current_dir_block.offset, 2] = [block.track, block.sector]
-        @current_dir_block = block
-      end
-
-      bam.commit
+      entry = Entry.new(self, name, type)
+      entry.store content
+      blocks = entry.sectors.map(&:block)
+      logger.info "  File uses #{blocks.size} blocks from #{blocks.first} to #{blocks.last}"
     end
 
     def logger

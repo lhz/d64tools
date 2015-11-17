@@ -12,7 +12,7 @@ module D64
     end
 
     def to_s
-      '[%02d:%02d] ($%04X)' % [track, sector, offset]
+      '[%02X:%02X]' % [track, sector]
     end
   end
 end

@@ -3,6 +3,9 @@
 $: << '../lib'
 
 require 'd64tools'
+require 'logger'
+
+D64.logger.level = Logger::INFO
 
 image = D64::Image.new(name: 'test', interleave: 7)
 image.format 'EXAMPLE DISK', '64'
@@ -13,3 +16,8 @@ sizes.each_with_index do |len, i|
 end
 
 image.write 'test.d64'
+
+if ENV['PRY']
+  require 'pry'
+  binding.pry
+end

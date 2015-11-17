@@ -42,7 +42,7 @@ module D64
         tn = opts[:block].track
         sn = opts[:block].sector
         free_on_track(tn)[sn] or
-          fail "Can't allocate used sector [%s %02d:%02d]." % [@image.name, tn, sn]
+          fail "Can't allocate used sector [%s %02X:%02X]." % [@image.name, tn, sn]
       else
         tracks = (1..35).to_a
         if tn = opts[:trackpref]
@@ -91,8 +91,23 @@ module D64
       @bytes[4 * tn] += 1
     end
 
-    def commit
-      image.commit_bam
+    def format(title, disk_id)
+      title   = title.bytes[0, 16]
+      disk_id = (disk_id + "  ").bytes[0, 2]
+      dos_ver = "A".ord
+      dos_id  = "2A".bytes
+      @bytes[0x00, 2] = [18, 1]
+      @bytes[0x02] = dos_ver
+      @bytes[0x90, 27] = [0xA0] * 27
+      @bytes[0x90, title.size] = title
+      @bytes[0xA2, 2] = disk_id
+      @bytes[0xA5, 2] = dos_id
+      (1..35).each do |tn|
+        D64::Image.sectors_per_track(tn).times do |sn|
+          mark_as_unused tn, sn unless tn == 18 && sn < 2
+        end
+      end
+      commit
     end
 
     private

@@ -8,16 +8,21 @@ module D64
       @bytes = bytes
     end
 
+    def []=(offset, value)
+      value = Array(value)
+      @bytes[offset, value.size] = value
+    end
+
     def to_s
       "<D64::Sector:#{object_id.to_s(16)} t=#{@block.track} s=#{@block.sector}>"
     end
 
     def pos
-      '[%02d:%02d]' % [block.track, block.sector]
+      '[%02X:%02X]' % [block.track, block.sector]
     end
 
     def name_pos
-      '[%s %02d:%02d]' % [image.name, block.track, block.sector]
+      '[%s %02X:%02X]' % [image.name, block.track, block.sector]
     end
     
     def next
@@ -34,7 +39,7 @@ module D64
     end
 
     def copy_content_from(other, opts = {})
-      puts "Copying content from #{other.name_pos} to #{name_pos}." if ENV['DEBUG']
+      logger.debug "Copying content from #{other.name_pos} to #{name_pos}."
       first = (opts[:include_link] ? 0 : 2)
       if block.track == 18 && block.sector == 0 && !opts[:include_bam]
         @bytes[first..3] = other.bytes[first..3]
@@ -46,8 +51,13 @@ module D64
     end
 
     def link_to(other, opts = {})
-      puts "Linking #{name_pos} to #{other.name_pos}." if ENV['DEBUG']
+      logger.debug "Linking #{name_pos} to #{other.name_pos}."
       @bytes[0, 2] = [other.block.track, other.block.sector]
+      commit
+    end
+
+    def end_chain
+      @bytes[0, 2] = [0, 255]
       commit
     end
 
@@ -73,6 +83,10 @@ module D64
           '.'
         end
       }.join
+    end
+
+    def logger
+      D64.logger
     end
   end
 end
