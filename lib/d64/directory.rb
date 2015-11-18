@@ -40,9 +40,7 @@ module D64
     end
 
     def add_sector
-      image.bam
       block = image.bam.next_free_dir_block
-      D64.logger.info "Got directory block #{block}"
       new_sector = Sector.new(image, block, empty_content)
       if sector
         sector.link_to new_sector

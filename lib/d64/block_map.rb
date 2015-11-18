@@ -21,65 +21,65 @@ module D64
       35.times.map { |i| bytes[4 * i + 4] }.reduce :+
     end
 
-    def allocate_with_interleave(prev = nil, interleave = 10)
-      tn, sn = (prev ? [prev.track, prev.sector] : [1, 0])
-      logger.info "Allocating with interleave #{interleave} relative to #{'[%02X:%02X]' % [tn, sn]}"
-      block = D64::Image.interleaved_blocks(tn, interleave, sn || 0).find do |b|
-        free_on_track(tn)[b.sector]
-      end
-      logger.info "Found free block #{block}"
-      if block
-        allocate block: block
-      elsif tn < 35
-        tnext = (tn == 17 ? 19 : tn + 1)
-        sn = (sn + interleave + 5) % D64::Image.sectors_per_track(tnext)
-        allocate_with_interleave Block.new(tnext, sn), interleave
-      else
-        fail "No room on disk!"
-      end
-    end
+    # def allocate_with_interleave(prev = nil, interleave = 10)
+    #   tn, sn = (prev ? [prev.track, prev.sector] : [1, 0])
+    #   logger.info "Allocating with interleave #{interleave} relative to #{'[%02X:%02X]' % [tn, sn]}"
+    #   block = D64::Image.interleaved_blocks(tn, interleave, sn || 0).find do |b|
+    #     free_on_track(tn)[b.sector]
+    #   end
+    #   logger.info "Found free block #{block}"
+    #   if block
+    #     allocate block: block
+    #   elsif tn < 35
+    #     tnext = (tn == 17 ? 19 : tn + 1)
+    #     sn = (sn + interleave + 5) % D64::Image.sectors_per_track(tnext)
+    #     allocate_with_interleave Block.new(tnext, sn), interleave
+    #   else
+    #     fail "No room on disk!"
+    #   end
+    # end
 
-    def allocate(opts = {})
-      if opts[:block]
-        tn = opts[:block].track
-        sn = opts[:block].sector
-        free_on_track(tn)[sn] or
-          fail "Can't allocate used sector [%s %02X:%02X]." % [@image.name, tn, sn]
-      else
-        tracks = (1..35).to_a
-        if tn = opts[:trackpref]
-          tracks.delete  opts[:trackpref]
-          tracks.unshift opts[:trackpref]
-        end
-        tn = nil
-        sn = nil
-        tracks.each do |t|
-          tn = t
-          if sn && opts[:interleave]
-            logger.debug "determine optimal track interleave from #{Block.new(tn - 1, sn)}"
-            sn += 5 - opts[:interleave]
-            sn += D64::Image.sectors_per_track(tn) if sn < 0
-            logger.debug "jumped to #{Block.new(tn, sn)}"
-          end
-          if opts[:interleave]
-            block = D64::Image.interleaved_blocks(tn, opts[:interleave], sn || 0).find do |block|
-              free_on_track(tn)[block.sector]
-            end
-            sn = block.sector if block
-          else
-            sn = free_on_track(tn).index(true)
-          end
-          break if sn
-        end
-        return nil unless sn
-      end
-      mark_as_used tn, sn
-      free_on_track(tn)[sn] and
-        fail "Failed to mark as used!"
-      block = Block.new(tn, sn)
-      logger.debug "Allocated block #{block}"
-      block
-    end
+    # def allocate(opts = {})
+    #   if opts[:block]
+    #     tn = opts[:block].track
+    #     sn = opts[:block].sector
+    #     free_on_track(tn)[sn] or
+    #       fail "Can't allocate used sector [%s %02X:%02X]." % [@image.name, tn, sn]
+    #   else
+    #     tracks = (1..35).to_a
+    #     if tn = opts[:trackpref]
+    #       tracks.delete  opts[:trackpref]
+    #       tracks.unshift opts[:trackpref]
+    #     end
+    #     tn = nil
+    #     sn = nil
+    #     tracks.each do |t|
+    #       tn = t
+    #       if sn && opts[:interleave]
+    #         logger.debug "determine optimal track interleave from #{Block.new(tn - 1, sn)}"
+    #         sn += 5 - opts[:interleave]
+    #         sn += D64::Image.sectors_per_track(tn) if sn < 0
+    #         logger.debug "jumped to #{Block.new(tn, sn)}"
+    #       end
+    #       if opts[:interleave]
+    #         block = D64::Image.interleaved_blocks(tn, opts[:interleave], sn || 0).find do |block|
+    #           free_on_track(tn)[block.sector]
+    #         end
+    #         sn = block.sector if block
+    #       else
+    #         sn = free_on_track(tn).index(true)
+    #       end
+    #       break if sn
+    #     end
+    #     return nil unless sn
+    #   end
+    #   mark_as_used tn, sn
+    #   free_on_track(tn)[sn] and
+    #     fail "Failed to mark as used!"
+    #   block = Block.new(tn, sn)
+    #   logger.debug "Allocated block #{block}"
+    #   block
+    # end
 
     def mark_as_used(tn, sn)
       byte, bit = sn.divmod(8)
@@ -118,6 +118,7 @@ module D64
         fail "No free blocks left, disk full!"
       block.tap do |b|
         mark_as_used b.track, b.sector
+        logger.debug "Allocated block #{b}."
       end
     end
 
@@ -127,6 +128,7 @@ module D64
         fail "No free directory blocks left!"
       block.tap do |b|
         mark_as_used b.track, b.sector
+        logger.debug "Allocated directory block #{b}."
       end
     end
 
@@ -134,7 +136,7 @@ module D64
       @free_blocks.size
     end
 
-    # private
+    private
 
     def all_blocks
       sn = 0

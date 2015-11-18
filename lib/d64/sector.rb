@@ -51,7 +51,7 @@ module D64
     end
 
     def link_to(other, opts = {})
-      logger.debug "Linking #{name_pos} to #{other.name_pos}."
+      logger.debug "Linking #{pos} to #{other.pos}."
       @bytes[0, 2] = [other.block.track, other.block.sector]
       commit
     end

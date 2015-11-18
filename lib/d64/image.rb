@@ -101,10 +101,9 @@ module D64
 
     def commit_bam
       commit_sector(bam)
-      # @image[Image.offset(@bam.block) + 4, 140] = @bam.bytes[4, 140]
     end
 
-    def reserve_blocks(track, first = 0, blocks = 1, interleave = 3)
+    def reserve_blocks(track, first = 0, blocks = 1, interleave = Directory::SECTOR_INTERLEAVE)
       interleaved = D64::Image.interleaved_blocks(track, interleave, first)
       while blocks > 0
         block = interleaved.shift or
@@ -129,7 +128,7 @@ module D64
       entry = Entry.new(self, name, type)
       entry.store content
       blocks = entry.sectors.map(&:block)
-      logger.info "  File uses #{blocks.size} blocks from #{blocks.first} to #{blocks.last}"
+      logger.info "  File uses #{blocks.size} blocks: #{blocks.map(&:to_s).join}"
     end
 
     def logger
