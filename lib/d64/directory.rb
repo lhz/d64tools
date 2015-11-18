@@ -4,10 +4,11 @@ module D64
 
     SECTOR_INTERLEAVE = 3
 
-    def initialize(image, block)
+    def initialize(image)
       @image = image
-      @sectors = [Sector.new(image, block, empty_content)]
+      @sectors = []
       @entries = []
+      add_sector
     end
 
     def <<(entry)
@@ -26,10 +27,6 @@ module D64
 
     private
 
-    def bam
-      image.bam
-    end
-
     def sector
       sectors.last
     end
@@ -43,8 +40,9 @@ module D64
     end
 
     def add_sector
-      block = bam.allocate_with_interleave(sector.block, SECTOR_INTERLEAVE) or
-        fail "No free directory blocks!"
+      image.bam
+      block = image.bam.next_free_dir_block
+      D64.logger.info "Got directory block #{block}"
       new_sector = Sector.new(image, block, empty_content)
       if sector
         sector.link_to new_sector

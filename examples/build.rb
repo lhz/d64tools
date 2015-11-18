@@ -15,9 +15,6 @@ sizes.each_with_index do |len, i|
   image.add_file "TEST #{i}", [0x0D, 0x08] + len.times.map { rand 256 }
 end
 
-image.write 'test.d64'
+# image.directory.entries.first.dump
 
-if ENV['PRY']
-  require 'pry'
-  binding.pry
-end
+image.write 'test.d64'

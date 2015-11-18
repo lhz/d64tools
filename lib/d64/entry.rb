@@ -24,8 +24,7 @@ module D64
       sector = nil
       block = image.last_file_sector.block if image.last_file_sector
       content.each_slice(254) do |bytes|
-        block = image.bam.allocate_with_interleave(block, image.interleave) or
-          fail "No free blocks, disk full!"
+        block = image.bam.next_free_block
         new_sector = Sector.new(image, block, [0, 1 + bytes.size] + padded_bytes(bytes))
         new_sector.commit
         if sector

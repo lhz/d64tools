@@ -23,9 +23,11 @@ module D64
 
     def allocate_with_interleave(prev = nil, interleave = 10)
       tn, sn = (prev ? [prev.track, prev.sector] : [1, 0])
+      logger.info "Allocating with interleave #{interleave} relative to #{'[%02X:%02X]' % [tn, sn]}"
       block = D64::Image.interleaved_blocks(tn, interleave, sn || 0).find do |b|
         free_on_track(tn)[b.sector]
       end
+      logger.info "Found free block #{block}"
       if block
         allocate block: block
       elsif tn < 35
@@ -110,7 +112,45 @@ module D64
       commit
     end
 
-    private
+    def next_free_block
+      @free_blocks ||= all_blocks
+      block = @free_blocks.shift or
+        fail "No free blocks left, disk full!"
+      block.tap do |b|
+        mark_as_used b.track, b.sector
+      end
+    end
+
+    def next_free_dir_block
+      @free_dir_blocks ||= all_dir_blocks
+      block = @free_dir_blocks.shift or
+        fail "No free directory blocks left!"
+      block.tap do |b|
+        mark_as_used b.track, b.sector
+      end
+    end
+
+    def blocks_free
+      @free_blocks.size
+    end
+
+    # private
+
+    def all_blocks
+      sn = 0
+      tracks = [*1..35] - [18] + [nil] # FIXME: Don't hardcode dirtrack
+      tracks.each_cons(2).with_object([]) do |(tn, tnext), blocks|
+        tblocks = D64::Image.interleaved_blocks(tn, image.interleave, sn)
+        if tnext
+          sn = (tblocks.last.sector + image.interleave + 5) % D64::Image.sectors_per_track(tnext)
+        end
+        tblocks.each { |b| blocks << b } # blocks += tblocks won't work, why?
+      end
+    end
+
+    def all_dir_blocks
+      D64::Image.interleaved_blocks(18, 3, 1) # FIXME: Don't hardcode dirtrack
+    end
 
     def track_value(tn)
       a, b, c = bytes[4 * tn + 1, 3]

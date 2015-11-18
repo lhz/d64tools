@@ -41,20 +41,21 @@ module D64
       count = sectors_per_track(track)
       visited = Array.new(count) { false }
       visited[sector] = true
-      (count - 1).times.each_with_object([Block.new(track, sector)]) do |i, blocks|
+      blocks = (count - 1).times.each_with_object([Block.new(track, sector)]) do |i, blocks|
         sector = (sector + il) % count
         sector = (sector + 1) % count while visited[sector]
         blocks << Block.new(track, sector)
         visited[sector] = true
       end
+      blocks
     end
 
     def initialize(interleave: 10, num_tracks: 35, name: '')
+      zerofill!
       @interleave = interleave
       @num_tracks = num_tracks
       @name = name
-      @directory = Directory.new(self, Block.new(18, 1))
-      zerofill!
+      @directory = Directory.new(self)
     end
 
     def zerofill!
